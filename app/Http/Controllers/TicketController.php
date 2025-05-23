@@ -2,9 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\TicketReplyRequest;
 use App\Http\Requests\TicketStoreRequest;
+use App\Http\Resources\TicketReplyResource;
 use App\Http\Resources\TicketResource;
 use App\Models\Ticket;
+use App\Models\TicketReply;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -91,6 +94,94 @@ class TicketController extends Controller
             return response([
                 'message' => $e->getMessage(),
                 'data' => null,
+            ], 500);
+        }
+    }
+
+    public function show($code)
+    {
+        try {
+            $ticket = Ticket::where('code', $code)->first();
+
+            if (!$ticket) {
+                return response([
+                    'message' => 'Tiket tidak ditemukan',
+                    'data' => null,
+                ], 404);
+            }
+
+            if (auth()->user()->role == 'user' && $ticket->user_id != auth()->user()->id) {
+                # code...
+                return response([
+                    'message' => 'Anda tidak berhak mengakses code tiket tersebut',
+                    'data' => null
+                ], 403);
+            }
+
+            return response([
+                'message' => 'Data tiket berhasil ditampilkan',
+                'data' => new TicketResource($ticket)
+            ], 200);
+        } catch (Exception $th) {
+            //throw $th;
+            return response([
+                'message' => $th->getMessage(),
+                'data' => null
+            ], 500);
+        }
+    }
+
+    public function replyTicket(TicketReplyRequest $ticketReplyRequest, $code)
+    {
+        $data = $ticketReplyRequest->validated();
+
+        try {
+            DB::beginTransaction();
+
+            $ticket = Ticket::where('code', $code)->first();
+
+            if (!$ticket) {
+                # code...
+                return response([
+                    'message' => 'Tiket tidak ditemukan',
+                    'data' => null,
+                ], 404);
+            }
+
+            if (auth()->user()->role == 'user' && $ticket->user_id != auth()->user()->id) {
+                # code...
+                return response([
+                    'message' => 'Anda tidak berhak mengakses code tiket tersebut',
+                    'data' => null
+                ], 403);
+            }
+
+            $ticketReply = new TicketReply();
+            $ticketReply->ticket_id = $ticket->id;
+            $ticketReply->user_id = auth()->user()->id;
+            $ticketReply->content = $data['content'];
+            $ticketReply->save();
+
+            if (auth()->user()->role == 'admin') {
+                # code...
+                $ticket->status = $data['status'];
+                if ($data['status'] == 'resolved') {
+                    $ticket->completed_at = now();
+                }
+                $ticket->save();
+            }
+
+            DB::commit();
+
+            return response([
+                'message' => 'Berhasil mengirim balasan',
+                'data' => new TicketReplyResource($ticketReply)
+            ], 201);
+        } catch (\Exception $th) {
+            //throw $th;
+            return response([
+                'message' => $th->getMessage(),
+                'data' => null
             ], 500);
         }
     }
